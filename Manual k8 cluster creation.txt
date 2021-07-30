@@ -1,0 +1,523 @@
+Pre-requisites
+---------------
+
+t2.medium with 2 CPUs  and 4 G Ram 
+Ubuntu Server 20.04 LTS (HVM), SSD Volume Type - ami-00399ec92321828f5 (64-bit x86) 
+
+A system user with "sudo" access on each server. 
+open the below port on each  Instance
+
+6443	TCP	0.0.0.0/0  - Default API  serverport
+
+
+perform following steps in all nodes
+------------------------------------
+
+ Step 1
+ ------
+
+set a hostname on each server. After executing the following commands on each server,
+ re-login to the servers so that the servers will get a new Hostname. 
+
+
+sudo hostnamectl set-hostname "nd-ctl-pl.tnh.com"
+sudo hostnamectl set-hostname "nd-wk1.tnh.com"
+sudo hostnamectl set-hostname "nd-wk2.tnh.com"
+
+
+ubuntu@nd-ctl-pl:~$ sudo apt update
+Hit:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-backports InRelease [101 kB]
+Hit:4 http://security.ubuntu.com/ubuntu focal-security InRelease
+Fetched 214 kB in 0s (556 kB/s)
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+All packages are up to date.
+
+Step 2
+------
+
+ubuntu@nd-ctl-pl:~$ sudo apt -y install curl apt-transport-https
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+curl is already the newest version (7.68.0-1ubuntu2.6).
+curl set to manually installed.
+The following NEW packages will be installed:
+  apt-transport-https
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 4680 B of archives.
+After this operation, 162 kB of additional disk space will be used.
+Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-updates/universe amd64 apt-transport-https all 2.0.6 [4680 B]
+Fetched 4680 B in 0s (327 kB/s)
+Selecting previously unselected package apt-transport-https.
+(Reading database ... 91365 files and directories currently installed.)
+Preparing to unpack .../apt-transport-https_2.0.6_all.deb ...
+Unpacking apt-transport-https (2.0.6) ...
+Setting up apt-transport-https (2.0.6) ...
+
+Step 3
+------
+
+ Add Kubernetes repository for Ubuntu 20.04 to all the servers.
+
+ubuntu@nd-ctl-pl:~$ curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+OK
+
+ubuntu@nd-ctl-pl:~$ echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+
+Step 4
+------
+Then install required packages.
+
+
+ubuntu@nd-ctl-pl:~$ sudo apt update
+Hit:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-backports InRelease [101 kB]
+Hit:4 http://security.ubuntu.com/ubuntu focal-security InRelease
+Get:5 https://packages.cloud.google.com/apt kubernetes-xenial InRelease [9383 B]
+Get:6 https://packages.cloud.google.com/apt kubernetes-xenial/main amd64 Packages [48.2 kB]
+Fetched 272 kB in 1s (306 kB/s)
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+All packages are up to date.
+
+
+ubuntu@nd-ctl-pl:~$ sudo apt -y install vim git curl wget kubelet kubeadm kubectl
+
+ubuntu@nd-ctl-pl:~$sudo apt-mark hold kubelet kubeadm kubectl
+
+ubuntu@nd-ctl-pl:~$ kubectl version --client && kubeadm version
+Client Version: version.Info{Major:"1", Minor:"21", GitVersion:"v1.21.3", GitCommit:"ca643a4d1f7bfe34773c74f79527be4afd95bf39", GitTreeState:"clean", BuildDate:"2021-07-15T21:04:39Z", GoVersion:"go1.16.6", Compiler:"gc", Platform:"linux/amd64"}
+kubeadm version: &version.Info{Major:"1", Minor:"21", GitVersion:"v1.21.3", GitCommit:"ca643a4d1f7bfe34773c74f79527be4afd95bf39", GitTreeState:"clean", BuildDate:"2021-07-15T21:03:28Z", GoVersion:"go1.16.6", Compiler:"gc", Platform:"linux/amd64"}
+
+Step 5
+------
+
+Disable swap 
+
+ubuntu@nd-ctl-pl:~$ sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+ubuntu@nd-ctl-pl:~$ sudo swapoff -a
+
+add overlay module for docker network and storage drivers
+
+ubuntu@nd-ctl-pl:~$ sudo modprobe overlay
+
+also br-netfilter - This module is required to enable transparent masquerading and to 
+facilitate Virtual Extensible LAN (VxLAN) traffic for communication between Kubernetes
+ pods across the cluster.
+
+ubuntu@nd-ctl-pl:~$ sudo modprobe br_netfilter
+
+
+enable  iptables filtering for bridge networking
+
+ubuntu@nd-ctl-pl:~$ 
+
+sudo tee /etc/sysctl.d/kubernetes.conf<<EOF
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+EOF
+
+ubuntu@nd-ctl-pl:~$ sudo sysctl --system
+* Applying /etc/sysctl.d/10-console-messages.conf ...
+kernel.printk = 4 4 1 7
+* Applying /etc/sysctl.d/10-ipv6-privacy.conf ...
+net.ipv6.conf.all.use_tempaddr = 2
+net.ipv6.conf.default.use_tempaddr = 2
+* Applying /etc/sysctl.d/10-kernel-hardening.conf ...
+kernel.kptr_restrict = 1
+* Applying /etc/sysctl.d/10-link-restrictions.conf ...
+fs.protected_hardlinks = 1
+fs.protected_symlinks = 1
+* Applying /etc/sysctl.d/10-magic-sysrq.conf ...
+kernel.sysrq = 176
+* Applying /etc/sysctl.d/10-network-security.conf ...
+net.ipv4.conf.default.rp_filter = 2
+net.ipv4.conf.all.rp_filter = 2
+* Applying /etc/sysctl.d/10-ptrace.conf ...
+kernel.yama.ptrace_scope = 1
+* Applying /etc/sysctl.d/10-zeropage.conf ...
+vm.mmap_min_addr = 65536
+* Applying /usr/lib/sysctl.d/50-default.conf ...
+net.ipv4.conf.default.promote_secondaries = 1
+sysctl: setting key "net.ipv4.conf.all.promote_secondaries": Invalid argument
+net.ipv4.ping_group_range = 0 2147483647
+net.core.default_qdisc = fq_codel
+fs.protected_regular = 1
+fs.protected_fifos = 1
+* Applying /usr/lib/sysctl.d/50-pid-max.conf ...
+kernel.pid_max = 4194304
+* Applying /etc/sysctl.d/99-cloudimg-ipv6.conf ...
+net.ipv6.conf.all.use_tempaddr = 0
+net.ipv6.conf.default.use_tempaddr = 0
+* Applying /etc/sysctl.d/99-sysctl.conf ...
+* Applying /etc/sysctl.d/kubernetes.conf ...
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+* Applying /usr/lib/sysctl.d/protect-links.conf ...
+fs.protected_fifos = 1
+fs.protected_hardlinks = 1
+fs.protected_regular = 2
+fs.protected_symlinks = 1
+* Applying /etc/sysctl.conf ...
+
+Step 6
+------
+
+Let's install docker runtime
+
+
+ubuntu@nd-ctl-pl:~$ sudo apt update
+Hit:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu focal-backports InRelease [101 kB]
+Hit:4 http://security.ubuntu.com/ubuntu focal-security InRelease
+Hit:5 https://packages.cloud.google.com/apt kubernetes-xenial InRelease
+Fetched 214 kB in 0s (466 kB/s)
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+All packages are up to date.
+
+
+ubuntu@nd-ctl-pl:~$ sudo apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates
+
+ubuntu@nd-ctl-pl:~$ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+OK
+
+ubuntu@nd-ctl-pl:~$ sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+
+ubuntu@nd-ctl-pl:~$ sudo apt update
+
+ubuntu@nd-ctl-pl:~$ sudo apt install -y containerd.io docker-ce docker-ce-cli
+
+Create the required Directories
+
+ubuntu@nd-ctl-pl:~$ sudo mkdir -p /etc/systemd/system/docker.service.d
+
+Create daemon json config file
+
+ubuntu@nd-ctl-pl:~$ sudo tee /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+
+Start and enable Services
+
+ubuntu@nd-ctl-pl:~$ sudo systemctl daemon-reload
+ubuntu@nd-ctl-pl:~$ sudo systemctl restart docker
+ubuntu@nd-ctl-pl:~$ sudo systemctl enable docker
+Synchronizing state of docker.service with SysV service script with /lib/systemd/systemd-sysv-install.
+Executing: /lib/systemd/systemd-sysv-install enable docker
+
+Step 7
+------
+Continue the below steps only in the control plane node (master node)
+
+make sure that the br_netfilter module is loaded:
+
+ubuntu@nd-ctl-pl:~$ lsmod | grep br_netfilter
+br_netfilter           28672  0
+bridge                192512  1 br_netfilter
+
+
+ubuntu@nd-ctl-pl:~$ sudo systemctl enable kubelet
+
+Pull container images:
+
+ubuntu@nd-ctl-pl:~$ sudo kubeadm config images pull
+[config/images] Pulled k8s.gcr.io/kube-apiserver:v1.21.3
+[config/images] Pulled k8s.gcr.io/kube-controller-manager:v1.21.3
+[config/images] Pulled k8s.gcr.io/kube-scheduler:v1.21.3
+[config/images] Pulled k8s.gcr.io/kube-proxy:v1.21.3
+[config/images] Pulled k8s.gcr.io/pause:3.4.1
+[config/images] Pulled k8s.gcr.io/etcd:3.4.13-0
+[config/images] Pulled k8s.gcr.io/coredns/coredns:v1.8.0
+
+ubuntu@nd-ctl-pl:~$ ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc mq state UP group default qlen 1000
+    link/ether 06:6f:bb:fa:9a:a2 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.19.229/20 brd 172.31.31.255 scope global dynamic eth0
+       valid_lft 2746sec preferred_lft 2746sec
+    inet6 fe80::46f:bbff:fefa:9aa2/64 scope link
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 02:42:80:5b:3e:c9 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+
+Set cluster endpoint DNS name or add record to /etc/hosts file.
+
+ubuntu@nd-ctl-pl:~$ vi /etc/hosts
+ubuntu@nd-ctl-pl:~$ sudo vi /etc/hosts
+
+172.31.19.229 k8-cluster.tnh.com
+
+ubuntu@nd-ctl-pl:~$ sudo kubeadm init \
+   --pod-network-cidr=192.168.0.0/16 \
+   --control-plane-endpoint=k8-cluster.tnh.com
+[init] Using Kubernetes version: v1.21.3
+[preflight] Running pre-flight checks
+[preflight] Pulling images required for setting up a Kubernetes cluster
+[preflight] This might take a minute or two, depending on the speed of your internet connection
+[preflight] You can also perform this action in beforehand using 'kubeadm config images pull'
+[certs] Using certificateDir folder "/etc/kubernetes/pki"
+[certs] Generating "ca" certificate and key
+[certs] Generating "apiserver" certificate and key
+[certs] apiserver serving cert is signed for DNS names [k8-cluster.tnh.com kubernetes kubernetes.default kubernetes.default.svc kubernetes.default.svc.cluster.local nd-ctl-pl.tnh.com] and IPs [10.96.0.1 172.31.19.229]
+[certs] Generating "apiserver-kubelet-client" certificate and key
+[certs] Generating "front-proxy-ca" certificate and key
+[certs] Generating "front-proxy-client" certificate and key
+[certs] Generating "etcd/ca" certificate and key
+[certs] Generating "etcd/server" certificate and key
+[certs] etcd/server serving cert is signed for DNS names [localhost nd-ctl-pl.tnh.com] and IPs [172.31.19.229 127.0.0.1 ::1]
+[certs] Generating "etcd/peer" certificate and key
+[certs] etcd/peer serving cert is signed for DNS names [localhost nd-ctl-pl.tnh.com] and IPs [172.31.19.229 127.0.0.1 ::1]
+[certs] Generating "etcd/healthcheck-client" certificate and key
+[certs] Generating "apiserver-etcd-client" certificate and key
+[certs] Generating "sa" key and public key
+[kubeconfig] Using kubeconfig folder "/etc/kubernetes"
+[kubeconfig] Writing "admin.conf" kubeconfig file
+[kubeconfig] Writing "kubelet.conf" kubeconfig file
+[kubeconfig] Writing "controller-manager.conf" kubeconfig file
+[kubeconfig] Writing "scheduler.conf" kubeconfig file
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Starting the kubelet
+[control-plane] Using manifest folder "/etc/kubernetes/manifests"
+[control-plane] Creating static Pod manifest for "kube-apiserver"
+[control-plane] Creating static Pod manifest for "kube-controller-manager"
+[control-plane] Creating static Pod manifest for "kube-scheduler"
+[etcd] Creating static Pod manifest for local etcd in "/etc/kubernetes/manifests"
+[wait-control-plane] Waiting for the kubelet to boot up the control plane as static Pods from directory "/etc/kubernetes/manifests". This can take up to 4m0s
+[apiclient] All control plane components are healthy after 11.002742 seconds
+[upload-config] Storing the configuration used in ConfigMap "kubeadm-config" in the "kube-system" Namespace
+[kubelet] Creating a ConfigMap "kubelet-config-1.21" in namespace kube-system with the configuration for the kubelets in the cluster
+[upload-certs] Skipping phase. Please see --upload-certs
+[mark-control-plane] Marking the node nd-ctl-pl.tnh.com as control-plane by adding the labels: [node-role.kubernetes.io/master(deprecated) node-role.kubernetes.io/control-plane node.kubernetes.io/exclude-from-external-load-balancers]
+[mark-control-plane] Marking the node nd-ctl-pl.tnh.com as control-plane by adding the taints [node-role.kubernetes.io/master:NoSchedule]
+[bootstrap-token] Using token: bfrq2u.2pum44u33fcrixg2
+[bootstrap-token] Configuring bootstrap tokens, cluster-info ConfigMap, RBAC Roles
+[bootstrap-token] configured RBAC rules to allow Node Bootstrap tokens to get nodes
+[bootstrap-token] configured RBAC rules to allow Node Bootstrap tokens to post CSRs in order for nodes to get long term certificate credentials
+[bootstrap-token] configured RBAC rules to allow the csrapprover controller automatically approve CSRs from a Node Bootstrap Token
+[bootstrap-token] configured RBAC rules to allow certificate rotation for all node client certificates in the cluster
+[bootstrap-token] Creating the "cluster-info" ConfigMap in the "kube-public" namespace
+[kubelet-finalize] Updating "/etc/kubernetes/kubelet.conf" to point to a rotatable kubelet client certificate and key
+[addons] Applied essential addon: CoreDNS
+[addons] Applied essential addon: kube-proxy
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of control-plane nodes by copying certificate authorities
+and service account keys on each node and then running the following as root:
+
+  kubeadm join k8-cluster.tnh.com:6443 --token bfrq2u.2pum44u33fcrixg2 \
+        --discovery-token-ca-cert-hash sha256:ec23d58131a3a4ecd5872af3546cd1a74ddd7ab37c205991eee0980477aaa1cf \
+        --control-plane
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join k8-cluster.tnh.com:6443 --token bfrq2u.2pum44u33fcrixg2 \
+        --discovery-token-ca-cert-hash sha256:ec23d58131a3a4ecd5872af3546cd1a74ddd7ab37c205991eee0980477aaa1cf
+ubuntu@nd-ctl-pl:~$
+
+
+Step 8
+------
+
+Configure kubectl profile information  using commands in the output
+
+ubuntu@nd-ctl-pl:~$  mkdir -p $HOME/.kube
+ubuntu@nd-ctl-pl:~$   sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+ubuntu@nd-ctl-pl:~$   sudo chown $(id -u):$(id -g) $HOME/.kube/config
+ubuntu@nd-ctl-pl:~$ cd $HOME/.kube
+ubuntu@master:~/.kube$ cd ..
+ubuntu@nd-ctl-pl:~$ pwd
+/home/ubuntu
+ubuntu@nd-ctl-pl:~$ kubectl cluster-info
+Kubernetes control plane is running at https://k8-cluster.tnh.com:6443
+CoreDNS is running at https://k8-cluster.tnh.com:6443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+
+Step 9
+------
+
+configure the calico pod network plugin. you can configure at your choice
+https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+
+ubuntu@nd-ctl-pl:~$ kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+configmap/calico-config created
+customresourcedefinition.apiextensions.k8s.io/bgpconfigurations.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/bgppeers.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/blockaffinities.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/clusterinformations.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/felixconfigurations.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/globalnetworkpolicies.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/globalnetworksets.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/hostendpoints.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/ipamblocks.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/ipamconfigs.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/ipamhandles.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/ippools.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/kubecontrollersconfigurations.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/networkpolicies.crd.projectcalico.org created
+customresourcedefinition.apiextensions.k8s.io/networksets.crd.projectcalico.org created
+clusterrole.rbac.authorization.k8s.io/calico-kube-controllers created
+clusterrolebinding.rbac.authorization.k8s.io/calico-kube-controllers created
+clusterrole.rbac.authorization.k8s.io/calico-node created
+clusterrolebinding.rbac.authorization.k8s.io/calico-node created
+daemonset.apps/calico-node created
+serviceaccount/calico-node created
+deployment.apps/calico-kube-controllers created
+serviceaccount/calico-kube-controllers created
+Warning: policy/v1beta1 PodDisruptionBudget is deprecated in v1.21+, unavailable in v1.25+; use policy/v1 PodDisruptionBudget
+poddisruptionbudget.policy/calico-kube-controllers created
+ubuntu@nd-ctl-pl:~$ watch kubectl get pods --all-namespaces
+
+Step 10
+-------
+
+ Add the worker nodes
+
+ubuntu@nd-wk1:~$ sudo kubeadm join k8-cluster.tnh.com:6443 --token bfrq2u.2pum44u33fcrixg2 \
+>         --discovery-token-ca-cert-hash sha256:ec23d58131a3a4ecd5872af3546cd1a74ddd7ab37c205991eee0980477aaa1cf
+[preflight] Running pre-flight checks
+
+[preflight] Reading configuration from the cluster...
+[preflight] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -o yaml'
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Starting the kubelet
+[kubelet-start] Waiting for the kubelet to perform the TLS Bootstrap...
+
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+
+ubuntu@nd-wk1:~$
+
+
+ All the nodes are up and running , the cluster is ready
+
+ubuntu@nd-ctl-pl:/etc/kubernetes$ kubectl get no
+NAME                STATUS   ROLES                  AGE   VERSION
+nd-ctl-pl.tnh.com   Ready    control-plane,master   75m   v1.21.3
+nd-wk1.tnh.com      Ready    <none>                 42m   v1.21.3
+nd-wk2.tnh.com      Ready    <none>                 23m   v1.21.3
+
+lets do a testing , on the control plane node, delploy a basic command pod
+
+ubuntu@nd-ctl-pl:~$kubectl apply -f https://k8s.io/examples/pods/commands.yaml
+
+
+ubuntu@nd-ctl-pl:~$ kubectl get po
+NAME           READY   STATUS      RESTARTS   AGE
+command-demo   0/1     Completed   0          52m
+ubuntu@nd-ctl-pl:~$ kubectl describe po command-demo
+Name:         command-demo
+Namespace:    default
+Priority:     0
+Node:         nd-wk2.tnh.com/172.31.31.4
+Start Time:   Fri, 30 Jul 2021 08:09:54 +0000
+Labels:       purpose=demonstrate-command
+Annotations:  cni.projectcalico.org/podIP:
+              cni.projectcalico.org/podIPs:
+Status:       Succeeded
+IP:           192.168.233.1
+IPs:
+  IP:  192.168.233.1
+Containers:
+  command-demo-container:
+    Container ID:  docker://e8e063a6a6cc29619c31169cb5ddab11fc05c7d13fe97d6e420bfcb77c03ebfe
+    Image:         debian
+    Image ID:      docker-pullable://debian@sha256:cc58a29c333ee594f7624d968123429b26916face46169304f07580644dde6b2
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      printenv
+    Args:
+      HOSTNAME
+      KUBERNETES_PORT
+    State:          Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Fri, 30 Jul 2021 08:10:00 +0000
+      Finished:     Fri, 30 Jul 2021 08:10:00 +0000
+    Ready:          False
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-2cgqc (ro)
+Conditions:
+  Type              Status
+  Initialized       True
+  Ready             False
+  ContainersReady   False
+  PodScheduled      True
+Volumes:
+  kube-api-access-2cgqc:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    ConfigMapOptional:       <nil>
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  53m   default-scheduler  Successfully assigned default/command-demo to nd-wk2.tnh.com
+  Normal  Pulling    53m   kubelet            Pulling image "debian"
+  Normal  Pulled     52m   kubelet            Successfully pulled image "debian" in 3.22785388s
+  Normal  Created    52m   kubelet            Created container command-demo-container
+  Normal  Started    52m   kubelet            Started container command-demo-container
+
+
+
+
+
+
+
